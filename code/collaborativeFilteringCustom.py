@@ -5,6 +5,7 @@ from surprise import Dataset
 from surprise import Reader, SVD
 from surprise.model_selection import train_test_split
 from sklearn.metrics import ndcg_score
+import statistics
 
 
 # Setting up movie data
@@ -25,7 +26,8 @@ for _, row in ratings.iterrows():
     user_ratings[row["userId"]].append(
         (row["userId"], row["movieId"], row["timestamp"], row["rating"])
     )
-    user_ids.append(row["userId"])
+    if row["userId"] not in user_ids:
+        user_ids.append(row["userId"])
 
 # Split data into testset and trainset
 train_ratio = 0.8
@@ -92,7 +94,7 @@ algo.fit(trainset)
 
 # endregion
 
-# TODO: calc ndcg
+# calc ndcg
 ndcg_scores = []
 
 # for each user:
@@ -100,22 +102,32 @@ ndcg_scores = []
 for user_id in user_ids:
     ndcg_actual_ratings = []
     ndcg_predicted_ratings = []
-    print(test_user_df[
-        test_user_df["userId"] == user_id
-    ])
 
+    # building actual and predicted ratings among test data points
     for index, row in test_user_df[
         test_user_df["userId"] == user_id
     ].iterrows():
-        # print(row)
         user_id, movie_id, actual_rating = row
         predicted_rating = algo.predict(user_id, movie_id, actual_rating).est
-        print(f"User {user_id} actual rating: {actual_rating}")
-        print(f"User {user_id} predicted rating: {predicted_rating}")
-        ndcg_actual_ratings.append(actual_rating)
-        ndcg_predicted_ratings.append(predicted_rating)
+        ndcg_actual_ratings.append([actual_rating, movie_id])
+        ndcg_predicted_ratings.append([predicted_rating, movie_id])
 
-    user_ndcg_score = ndcg_score(ndcg_actual_ratings, ndcg_predicted_ratings)
+    # building actual and predicted ranks among test data points
+    ndcg_actual_ratings = sorted(ndcg_actual_ratings, key=lambda r: r[0])
+    ndcg_predicted_ratings = sorted(ndcg_predicted_ratings, key=lambda r: r[0])
+
+    for index in range(len(ndcg_actual_ratings)):
+        ndcg_actual_ratings[index].append(index)
+        ndcg_predicted_ratings[index].append(index)
+
+    # sorting by movie_id for rank comparison with NDCG
+    ndcg_actual_ratings = sorted(ndcg_actual_ratings, key=lambda r: r[1])
+    ndcg_predicted_ratings = sorted(ndcg_predicted_ratings, key=lambda r: r[1])
+
+    actual_rankings = [r[2] for r in ndcg_actual_ratings]
+    predicted_rankings = [r[2] for r in ndcg_predicted_ratings]
+
+    user_ndcg_score = ndcg_score([actual_rankings], [predicted_rankings], k=5)
     print(f"User {user_id} ndcg score: {user_ndcg_score}")
     ndcg_scores.append(user_ndcg_score)
 
@@ -127,3 +139,4 @@ def Average(lst):
 
 
 print(f"Avg NDCG Score: ${Average(ndcg_scores)}")
+print(f"Median NDCG Score: ${statistics.median(ndcg_scores)}")
